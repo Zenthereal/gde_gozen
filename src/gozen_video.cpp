@@ -1,4 +1,5 @@
 #include "gozen_video.hpp"
+#include <thread>
 
 
 int GoZenVideo::open(const String& video_path) {
@@ -165,6 +166,15 @@ int GoZenVideo::open(const String& video_path) {
 
 	FFmpeg::enable_multithreading(av_codec_ctx.get(), av_codec);
 
+	// Cap decode threads: enable_multithreading sets thread_count to the logical
+	// core count (~23 on high-core CPUs), which storms the CPU on open and stalls
+	// the main thread. Clamp it. Runs AFTER enable_multithreading so this wins.
+	{
+		int cores = (int)std::thread::hardware_concurrency();
+		av_codec_ctx->thread_count = (cores <= 8) ? 2 : 4;
+		av_codec_ctx->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+	}
+	
 	// Open codec - Video.
 	if (avcodec_open2(av_codec_ctx.get(), av_codec, NULL)) {
 		close();
